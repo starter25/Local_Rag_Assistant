@@ -1,0 +1,49 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.python-version.local
+
+# Virtual environments
+venv/
+.venv/
+env/
+ENV/
+
+# Test/type/coverage caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Local secrets and machine-specific config
+.env
+.env.*
+*.local
+
+# Local RAG runtime data
+storage/chroma_db/
+storage/runtime/
+storage/documents/*
+!storage/documents/.gitkeep
+
+# Build artifacts
+build/
+dist/
+*.spec
+*.exe
+
+# Logs
+*.log
+
+# OS / editor
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+.vscode/
+
+# Codex/local workspace metadata
+.agents/
+.codex/

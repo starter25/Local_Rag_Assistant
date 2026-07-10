@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Local RAG Assistant</title>
+  <link rel="stylesheet" href="./style.css" />
+</head>
+<body>
+  <div class="app">
+    <!-- Left Sidebar -->
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-icon">R</div>
+        <div>
+          <h1>Local RAG</h1>
+          <p>Private Document AI</p>
+        </div>
+      </div>
+
+      <button id="newChatBtn" class="primary-btn">
+        + 새 채팅
+      </button>
+
+      <section class="panel">
+        <div class="panel-title">검색 모드</div>
+
+        <div class="mode-group">
+          <button class="mode-btn active" data-mode="fast">
+            Fast
+            <span>빠른 답변</span>
+          </button>
+
+          <button class="mode-btn" data-mode="balanced">
+            Balanced
+            <span>균형 답변</span>
+          </button>
+
+          <button class="mode-btn" data-mode="deep">
+            Deep
+            <span>깊은 답변</span>
+          </button>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header">
+            <div class="panel-title">문서</div>
+
+            <div class="doc-actions">
+                <button id="syncBtn" class="small-btn">동기화</button>
+                <button id="uploadOpenBtn" class="small-btn">+ 파일</button>
+            </div>
+        </div>
+
+        <div id="fileList" class="file-list">
+          <div class="empty-text">아직 추가된 문서가 없어.</div>
+        </div>
+      </section>
+
+      <section class="panel chat-panel">
+        <div class="panel-title">채팅 목록</div>
+
+        <div id="chatList" class="chat-list">
+          <button class="chat-item active">
+            <span>현재 채팅</span>
+          </button>
+        </div>
+      </section>
+    </aside>
+
+    <!-- Main Chat -->
+    <main class="main">
+      <header class="chat-header">
+        <div>
+          <h2>문서 기반 로컬 AI 어시스턴트</h2>
+          <p id="statusText">프론트 UI 테스트 모드 · 백엔드 연결 전</p>
+        </div>
+
+        <div class="current-mode">
+          Mode: <strong id="currentModeText">Fast</strong>
+        </div>
+      </header>
+
+      <section id="messageList" class="message-list">
+        <div class="message assistant">
+          <div class="avatar">AI</div>
+          <div class="bubble">
+            <p>
+              안녕. 문서를 업로드하고 질문하면, 관련 chunk를 찾아 답변하는 로컬 RAG 어시스턴트 화면이야.
+            </p>
+            <p class="hint">
+              지금은 프론트 UI 단계라 백엔드 연결 전에는 테스트 응답이 나와.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <footer class="chat-input-area">
+        <textarea
+          id="questionInput"
+          placeholder="문서에 대해 질문해봐. 예: 이 프로젝트는 어떤 시스템이야?"
+          rows="1"
+        ></textarea>
+
+        <button id="sendBtn" class="send-btn">
+          보내기
+        </button>
+      </footer>
+    </main>
+  </div>
+
+  <!-- Upload Modal -->
+  <div id="uploadModal" class="modal hidden">
+    <div class="modal-backdrop"></div>
+
+    <div class="modal-content">
+      <div class="modal-header">
+        <div>
+          <h3>문서 업로드</h3>
+          <p>PDF, TXT, MD, DOCX 파일을 추가할 수 있어.</p>
+        </div>
+
+        <button id="uploadCloseBtn" class="icon-btn">×</button>
+      </div>
+
+      <div id="dropZone" class="drop-zone">
+        <div class="drop-icon">⬆</div>
+        <h4>파일을 여기에 드래그해줘</h4>
+        <p>또는 아래 버튼으로 파일을 선택할 수 있어.</p>
+
+        <input
+          id="fileInput"
+          type="file"
+          multiple
+          accept=".pdf,.txt,.md,.docx"
+          hidden
+        />
+
+        <button id="fileSelectBtn" class="secondary-btn">
+          파일 선택
+        </button>
+      </div>
+
+      <div id="selectedFileList" class="selected-file-list"></div>
+
+      <div class="modal-actions">
+        <button id="uploadCancelBtn" class="ghost-btn">취소</button>
+        <button id="uploadSubmitBtn" class="primary-btn">추가하기</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="./script.js"></script>
+</body>
+</html>
