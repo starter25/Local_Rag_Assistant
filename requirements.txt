@@ -2,6 +2,9 @@ chromadb
 fastapi
 pydantic
 pypdf
+pymupdf
+pytesseract
+Pillow
 python-docx
 python-multipart
 requests

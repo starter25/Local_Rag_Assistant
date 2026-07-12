@@ -1,12 +1,16 @@
+from pathlib import Path
+
 import chromadb
 
 from app.config import CHROMA_DIR, COLLECTION_NAME
 
 
-def get_collection(reset=False):
-    CHROMA_DIR.mkdir(parents=True, exist_ok=True)
+# Persistent ChromaDB collection을 열고 필요하면 컬렉션을 초기화합니다.
+def get_collection(reset=False, chroma_dir: Path | None = None):
+    target_dir = chroma_dir or CHROMA_DIR
+    target_dir.mkdir(parents=True, exist_ok=True)
 
-    client = chromadb.PersistentClient(path=str(CHROMA_DIR))
+    client = chromadb.PersistentClient(path=str(target_dir))
 
     if reset:
         try:
@@ -22,6 +26,7 @@ def get_collection(reset=False):
     return collection
 
 
+# ChromaDB metadata를 훑어 문서별 chunk 수와 file_hash를 집계합니다.
 def get_db_sources(collection):
     """
     ChromaDB에 저장된 문서 source 목록을 가져온다.
@@ -56,6 +61,7 @@ def get_db_sources(collection):
     return sources
 
 
+# 특정 source 파일명에 해당하는 모든 chunk를 ChromaDB에서 삭제합니다.
 def delete_document_from_db(collection, source: str):
     before_count = collection.count()
     collection.delete(where={"source": source})

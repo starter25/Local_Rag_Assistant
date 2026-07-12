@@ -25,6 +25,10 @@ htmlcov/
 # Local RAG runtime data
 storage/chroma_db/
 storage/runtime/
+storage/chats/
+storage/projects/
+storage/document_index.json
+storage/projects.json
 storage/documents/*
 !storage/documents/.gitkeep
 
@@ -33,9 +37,13 @@ build/
 dist/
 *.spec
 *.exe
+desktop-runtime/
+node_modules/
+src-tauri/target/
 
 # Logs
 *.log
+tauri-build.log
 
 # OS / editor
 .DS_Store

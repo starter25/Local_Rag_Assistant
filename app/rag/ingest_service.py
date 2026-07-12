@@ -1,13 +1,28 @@
 import hashlib
 from pathlib import Path
 
-from app.config import CHROMA_DIR, DOCUMENT_DIR, INGEST_BATCH_SIZE
-from app.rag.document_loader import load_document
+import time
+
+from app.config import (
+    CHROMA_DIR,
+    CHUNK_OVERLAP,
+    CHUNK_SIZE,
+    DOCUMENT_DIR,
+    DOCUMENT_LOADER_VERSION,
+    EMBED_MODEL,
+    INGEST_BATCH_SIZE,
+)
+from app.rag.document_loader import SUPPORTED_DOCUMENT_EXTENSIONS, load_document
+from app.rag.index_profile import get_current_index_profile
 from app.rag.ollama_client import check_ollama, get_embeddings
 from app.rag.splitter import split_text
 from app.rag.vector_db import delete_document_from_db, get_collection
 
 
+LOADER_VERSION = DOCUMENT_LOADER_VERSION
+
+
+# 파일 내용이 바뀌었는지 판단하고 chunk 메타데이터에 저장할 해시를 계산합니다.
 def file_sha256(path: Path):
     hash_obj = hashlib.sha256()
 
@@ -18,21 +33,25 @@ def file_sha256(path: Path):
     return hash_obj.hexdigest()
 
 
-def get_document_files():
-    DOCUMENT_DIR.mkdir(parents=True, exist_ok=True)
+# documents 폴더에서 현재 지원하는 파일만 골라 동기화 대상으로 사용합니다.
+def get_document_files(document_dir: Path | None = None):
+    target_dir = document_dir or DOCUMENT_DIR
+    target_dir.mkdir(parents=True, exist_ok=True)
 
     return [
         p
-        for p in DOCUMENT_DIR.iterdir()
-        if p.suffix.lower() in [".txt", ".md", ".pdf", ".docx"]
+        for p in target_dir.iterdir()
+        if p.suffix.lower() in SUPPORTED_DOCUMENT_EXTENSIONS
     ]
 
 
+# 같은 파일을 다시 처리해도 같은 chunk는 같은 id를 갖도록 결정적 id를 만듭니다.
 def make_chunk_id(file_path: Path, page, chunk_index: int, text: str):
     raw = f"{file_path.name}-{page}-{chunk_index}-{text}"
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
+# embedding 요청과 ChromaDB upsert를 적당한 크기로 나누기 위한 배치 유틸입니다.
 def batched(items, size: int):
     size = max(1, size)
 
@@ -40,23 +59,52 @@ def batched(items, size: int):
         yield items[start : start + size]
 
 
-def ingest_file(collection, file_path: Path, replace=True):
+# 파일 하나를 텍스트 추출, chunk 분할, embedding, ChromaDB 저장까지 처리합니다.
+def ingest_file(collection, file_path: Path, replace=True, progress=None):
     """
     문서 1개를 읽어서
     텍스트 추출 → chunk 분리 → embedding → ChromaDB 저장.
     """
 
     if replace:
+        if progress:
+            progress("deleting_old_chunks", "Removing old chunks from ChromaDB.")
+
         delete_document_from_db(collection, file_path.name)
 
+    if progress:
+        progress("hashing_file", "Calculating file hash.")
+
     file_hash = file_sha256(file_path)
-    pages = load_document(file_path)
+
+    if progress:
+        progress("reading_document", "Reading document text.")
+
+    pages = load_document(file_path, progress=progress)
+    indexed_at = int(time.time())
+    character_count = sum(len((page_data.get("text") or "").strip()) for page_data in pages)
 
     total_chunks = 0
+    page_count = len(pages)
+    warnings = []
+    ocr_used = any(bool(page_data.get("ocr_used")) for page_data in pages)
+    ocr_engine = next((page_data.get("ocr_engine") for page_data in pages if page_data.get("ocr_engine")), "")
+    ocr_pages = sum(1 for page_data in pages if page_data.get("ocr_used"))
+
+    if not pages or character_count == 0:
+        warnings.append("No extractable text was found.")
 
     for page_data in pages:
-        text = page_data["text"]
-        page = page_data["page"]
+        for warning in page_data.get("warnings", []) or []:
+            if warning and warning not in warnings:
+                warnings.append(warning)
+
+    for page_data in pages:
+        text = page_data.get("text", "")
+        page = page_data.get("page")
+
+        if progress:
+            progress("splitting_chunks", f"Splitting page {page if page is not None else ''} into chunks.")
 
         chunks = split_text(text)
 
@@ -72,13 +120,30 @@ def ingest_file(collection, file_path: Path, replace=True):
                         "page": page if page is not None else "",
                         "chunk_index": idx,
                         "file_hash": file_hash,
+                        "loader_version": LOADER_VERSION,
+                        "embedding_model": EMBED_MODEL,
+                        "chunk_size": CHUNK_SIZE,
+                        "chunk_overlap": CHUNK_OVERLAP,
+                        "indexed_at": indexed_at,
+                        "ocr_used": bool(page_data.get("ocr_used")),
+                        "ocr_engine": page_data.get("ocr_engine", ""),
                     },
                 }
             )
 
         for batch in batched(chunk_records, INGEST_BATCH_SIZE):
             documents = [item["text"] for item in batch]
+
+            if progress:
+                progress(
+                    "embedding_chunks",
+                    f"Embedding chunks {total_chunks + 1}-{total_chunks + len(batch)}.",
+                )
+
             embeddings = get_embeddings(documents)
+
+            if progress:
+                progress("saving_vectors", "Saving vectors to ChromaDB.")
 
             collection.upsert(
                 ids=[item["id"] for item in batch],
@@ -89,9 +154,20 @@ def ingest_file(collection, file_path: Path, replace=True):
 
             total_chunks += len(batch)
 
-    return total_chunks
+    return {
+        "chunks": total_chunks,
+        "pages": page_count,
+        "characters": character_count,
+        "file_hash": file_hash,
+        "warnings": warnings,
+        "ocr_used": ocr_used,
+        "ocr_engine": ocr_engine,
+        "ocr_pages": ocr_pages,
+        "index_profile": get_current_index_profile(),
+    }
 
 
+# CLI나 수동 동기화에서 documents 폴더 전체를 한 번에 벡터화할 때 사용합니다.
 def ingest_documents(reset=False):
     check_ollama()
 
@@ -107,7 +183,8 @@ def ingest_documents(reset=False):
     for file_path in files:
         print(f"\n문서 처리 중: {file_path.name}")
 
-        chunk_count = ingest_file(collection, file_path, replace=True)
+        result = ingest_file(collection, file_path, replace=True)
+        chunk_count = result["chunks"]
         total_chunks += chunk_count
 
         print(f"완료: {file_path.name} / chunk 수: {chunk_count}")

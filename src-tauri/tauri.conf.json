@@ -1,0 +1,39 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Local RAG Assistant",
+  "version": "0.1.1",
+  "identifier": "com.starter25.local-rag-assistant",
+  "build": {
+    "frontendDist": "../frontend",
+    "beforeBuildCommand": "powershell -ExecutionPolicy Bypass -File .\\tools\\generate_tauri_icons.ps1"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Local RAG Assistant",
+        "width": 1440,
+        "height": 960,
+        "minWidth": 1120,
+        "minHeight": 760,
+        "resizable": true,
+        "visible": false
+      }
+    ]
+  },
+  "bundle": {
+    "active": true,
+    "targets": "msi",
+    "icon": [
+      "icons/icon.ico",
+      "icons/icon.png"
+    ],
+    "resources": [
+      "../desktop-runtime"
+    ],
+    "windows": {
+      "digestAlgorithm": "sha256",
+      "timestampUrl": "http://timestamp.digicert.com"
+    }
+  }
+}

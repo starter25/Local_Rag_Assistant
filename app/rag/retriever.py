@@ -1,12 +1,21 @@
-from app.config import DEFAULT_RETRIEVAL_MODE
+from app.config import DEFAULT_PROJECT_ID, DEFAULT_RETRIEVAL_MODE
+from app.project_store import get_project_context
 from app.rag.ollama_client import check_ollama, get_embedding
 from app.rag.query_rewriter import rewrite_query_variants
 from app.rag.retrieval_settings import get_retrieval_settings, normalize_retrieval_mode
 from app.rag.vector_db import get_collection
 
 
-def retrieve(question: str, mode=DEFAULT_RETRIEVAL_MODE):
-    collection = get_collection(reset=False)
+# 질문을 여러 검색어로 확장하고 ChromaDB에서 관련 chunk를 찾아 최종 근거 목록을 반환합니다.
+def retrieve(
+    question: str,
+    mode=DEFAULT_RETRIEVAL_MODE,
+    model: str | None = None,
+    progress=None,
+    project_id: str = DEFAULT_PROJECT_ID,
+):
+    context = get_project_context(project_id)
+    collection = get_collection(reset=False, chroma_dir=context.chroma_dir)
 
     db_count = collection.count()
 
@@ -25,15 +34,26 @@ def retrieve(question: str, mode=DEFAULT_RETRIEVAL_MODE):
 
     n_results = min(candidate_k, db_count)
 
+    if progress:
+        progress("rewriting_question", "질문을 검색하기 좋게 정리하는 중...")
+
     query_variants = rewrite_query_variants(
         question,
         max_variants=query_variant_k,
+        model=model,
     )
 
     merged = {}
 
+    # 여러 query variant에서 같은 chunk가 잡히면 가장 가까운 distance만 남깁니다.
     for query in query_variants:
+        if progress:
+            progress("embedding_question", "질문을 벡터로 변환하는 중...")
+
         question_embedding = get_embedding(query)
+
+        if progress:
+            progress("searching_vectors", "문서 벡터를 검색하는 중...")
 
         results = collection.query(
             query_embeddings=[question_embedding],

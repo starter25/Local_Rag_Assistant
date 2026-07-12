@@ -22,40 +22,47 @@
         + 새 채팅
       </button>
 
-      <section class="panel">
-        <div class="panel-title">검색 모드</div>
+      <section id="projectPanel" class="panel project-panel">
+        <button id="projectPanelToggle" class="project-panel-toggle" type="button" aria-expanded="true">
+          <div>
+            <div class="panel-title">프로젝트</div>
+            <div id="projectStatusText" class="project-status">
+              현재 프로젝트: 기본
+            </div>
+          </div>
 
-        <div class="mode-group">
-          <button class="mode-btn active" data-mode="fast">
-            Fast
-            <span>빠른 답변</span>
-          </button>
+          <span id="projectPanelToggleLabel" class="project-panel-toggle-label">접기</span>
+        </button>
 
-          <button class="mode-btn" data-mode="balanced">
-            Balanced
-            <span>균형 답변</span>
-          </button>
+        <div id="projectPanelBody" class="project-panel-body">
+          <select id="projectSelect" class="project-select" disabled>
+            <option value="default">기본</option>
+          </select>
 
-          <button class="mode-btn" data-mode="deep">
-            Deep
-            <span>깊은 답변</span>
-          </button>
+          <button id="projectCreateOpenBtn" class="small-btn project-create-open-btn">+ 프로젝트</button>
         </div>
       </section>
 
-      <section class="panel">
-        <div class="panel-header">
+      <section class="panel model-panel">
+        <button id="modelManageBtn" class="model-manage-btn" type="button">
+          <div>
+            <div class="panel-title">모델</div>
+            <div id="modelPanelSummary" class="model-panel-summary">모델 불러오는 중...</div>
+          </div>
+
+          <span class="model-manage-label">관리</span>
+        </button>
+      </section>
+
+      <section id="documentPanel" class="panel document-panel">
+        <button id="documentManageBtn" class="document-manage-btn" type="button">
+          <div>
             <div class="panel-title">문서</div>
+            <div id="documentPanelSummary" class="document-panel-summary">문서 0개</div>
+          </div>
 
-            <div class="doc-actions">
-                <button id="syncBtn" class="small-btn">동기화</button>
-                <button id="uploadOpenBtn" class="small-btn">+ 파일</button>
-            </div>
-        </div>
-
-        <div id="fileList" class="file-list">
-          <div class="empty-text">아직 추가된 문서가 없어.</div>
-        </div>
+          <span class="document-manage-label">관리</span>
+        </button>
       </section>
 
       <section class="panel chat-panel">
@@ -78,12 +85,22 @@
         </div>
 
         <div class="current-mode">
-          Mode: <strong id="currentModeText">Fast</strong>
+          프로젝트: <strong id="currentProjectText">기본</strong>
         </div>
+
+        <div class="current-mode">
+          모델: <strong id="currentModelText">기본</strong>
+        </div>
+
+        <div class="current-mode">
+          문서: <strong id="currentDocumentCountText">0개</strong>
+        </div>
+
+        <button id="guideOpenBtn" class="guide-btn">도움말</button>
       </header>
 
       <section id="messageList" class="message-list">
-        <div class="message assistant">
+        <div class="message assistant initial-message">
           <div class="avatar">AI</div>
           <div class="bubble">
             <p>
@@ -97,17 +114,197 @@
       </section>
 
       <footer class="chat-input-area">
-        <textarea
-          id="questionInput"
-          placeholder="문서에 대해 질문해봐. 예: 이 프로젝트는 어떤 시스템이야?"
-          rows="1"
-        ></textarea>
+        <div class="chat-input-toolbar" aria-label="답변 설정">
+          <label class="chat-setting-control">
+            <span>답변</span>
+            <select id="answerModeSelect" class="chat-setting-select">
+              <option value="strict_rag">문서 기반</option>
+              <option value="hybrid">문서+해석</option>
+              <option value="general">일반 AI</option>
+            </select>
+          </label>
 
-        <button id="sendBtn" class="send-btn">
-          보내기
-        </button>
+          <label class="chat-setting-control">
+            <span>검색</span>
+            <select id="searchModeSelect" class="chat-setting-select">
+              <option value="fast">빠름</option>
+              <option value="balanced">균형</option>
+              <option value="deep">깊게</option>
+            </select>
+          </label>
+        </div>
+
+        <div id="documentModeNotice" class="document-mode-notice hidden">
+          현재 프로젝트에 문서가 없어요. 문서 기반 답변을 쓰려면 문서를 추가하거나, 답변 모드를 일반 AI로 바꿔주세요.
+        </div>
+
+        <div class="chat-input-row">
+          <textarea
+            id="questionInput"
+            placeholder="문서에 대해 질문해봐. 예: 이 프로젝트는 어떤 시스템이야?"
+            rows="1"
+          ></textarea>
+
+          <button id="sendBtn" class="send-btn">
+            보내기
+          </button>
+        </div>
       </footer>
     </main>
+  </div>
+
+  <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
+
+  <div id="deleteConfirmModal" class="modal hidden">
+    <div class="modal-backdrop"></div>
+
+    <div class="modal-content delete-confirm-content">
+      <div class="modal-header">
+        <div>
+          <h3 id="deleteConfirmTitle">삭제할까요?</h3>
+          <p id="deleteConfirmMessage">선택한 항목이 삭제됩니다.</p>
+        </div>
+
+        <button id="deleteConfirmCloseBtn" class="icon-btn">×</button>
+      </div>
+
+      <div id="deleteConfirmTarget" class="delete-confirm-target"></div>
+
+      <div class="modal-actions">
+        <button id="deleteConfirmCancelBtn" class="ghost-btn">취소</button>
+        <button id="deleteConfirmSubmitBtn" class="danger-btn">삭제</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="projectModal" class="modal hidden">
+    <div class="modal-backdrop"></div>
+
+    <div class="modal-content project-modal-content">
+      <div class="modal-header">
+        <div>
+          <h3>프로젝트 추가</h3>
+          <p>새 프로젝트를 만들면 문서, 채팅, 벡터 저장소가 프로젝트별로 분리됩니다.</p>
+        </div>
+
+        <button id="projectModalCloseBtn" class="icon-btn">×</button>
+      </div>
+
+      <div class="project-modal-body">
+        <label class="modal-field-label" for="projectNameInput">프로젝트 이름</label>
+        <input
+          id="projectNameInput"
+          class="project-name-input"
+          type="text"
+          placeholder="새 프로젝트 이름"
+        />
+      </div>
+
+      <div class="modal-actions">
+        <button id="projectCreateCancelBtn" class="ghost-btn">취소</button>
+        <button id="projectCreateBtn" class="primary-btn">추가</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="modelModal" class="modal hidden">
+    <div class="modal-backdrop"></div>
+
+    <div class="modal-content model-modal-content">
+      <div class="modal-header">
+        <div>
+          <h3>모델 관리</h3>
+          <p id="modelModalSummary">모델 불러오는 중...</p>
+        </div>
+
+        <button id="modelModalCloseBtn" class="icon-btn">×</button>
+      </div>
+
+      <div class="model-modal-section">
+        <label class="modal-field-label" for="modelSelect">사용할 모델</label>
+
+        <select id="modelSelect" class="model-select" disabled>
+          <option value="">Ollama 모델 불러오는 중...</option>
+        </select>
+
+        <div id="modelStatusText" class="model-status">
+          설치된 대화 모델만 표시합니다.
+        </div>
+      </div>
+
+      <div class="model-modal-section">
+        <div class="modal-field-label">설치 가능한 추천 모델</div>
+        <div id="recommendedModelList" class="model-install-list"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="documentModal" class="modal hidden">
+    <div class="modal-backdrop"></div>
+
+    <div class="modal-content document-modal-content">
+      <div class="modal-header">
+        <div>
+          <h3>문서 관리</h3>
+          <p id="documentModalSummary">문서 0개</p>
+        </div>
+
+        <button id="documentModalCloseBtn" class="icon-btn">×</button>
+      </div>
+
+      <div class="document-modal-toolbar">
+        <button id="syncBtn" class="secondary-btn">동기화</button>
+        <button id="uploadOpenBtn" class="primary-btn">+ 파일 추가</button>
+      </div>
+
+      <div class="document-filter-bar" aria-label="문서 상태 필터">
+        <button class="document-filter-btn active" data-document-filter="all" type="button">전체</button>
+        <button class="document-filter-btn" data-document-filter="indexed" type="button">정상</button>
+        <button class="document-filter-btn" data-document-filter="needs_sync" type="button">동기화 필요</button>
+        <button class="document-filter-btn" data-document-filter="problem" type="button">문제 있음</button>
+      </div>
+
+      <div id="fileList" class="file-list document-modal-file-list">
+        <div class="empty-text">아직 추가된 문서가 없어.</div>
+      </div>
+    </div>
+  </div>
+
+  <div id="guideModal" class="modal hidden">
+    <div class="modal-backdrop"></div>
+
+    <div class="modal-content guide-modal-content">
+      <div class="modal-header">
+        <div>
+          <h3>사용 설명서</h3>
+          <p>현재 앱에서 가장 자주 쓰는 흐름만 정리했어.</p>
+        </div>
+
+        <button id="guideCloseBtn" class="icon-btn">×</button>
+      </div>
+
+      <div class="guide-body">
+        <section>
+          <h4>1. 문서 기반 답변</h4>
+          <p>문서를 업로드한 뒤 문서 기반 모드로 질문하면 문서에서 찾은 내용 안에서만 답합니다.</p>
+        </section>
+
+        <section>
+          <h4>2. 문서+해석 답변</h4>
+          <p>문서 내용을 기준으로 답하되, 추가 해석이나 조언이 필요할 때 사용합니다.</p>
+        </section>
+
+        <section>
+          <h4>3. 일반 AI</h4>
+          <p>문서 없이 일반 질문, 요약 아이디어, 코딩 질문을 할 때 사용합니다.</p>
+        </section>
+
+        <section>
+          <h4>4. 대화 기억</h4>
+          <p>같은 채팅 안에서는 이전 대화 맥락을 이어서 답합니다. 필요하면 왼쪽 채팅 목록에서 새 채팅을 시작하세요.</p>
+        </section>
+      </div>
+    </div>
   </div>
 
   <!-- Upload Modal -->
@@ -118,7 +315,7 @@
       <div class="modal-header">
         <div>
           <h3>문서 업로드</h3>
-          <p>PDF, TXT, MD, DOCX 파일을 추가할 수 있어.</p>
+          <p>PDF, TXT, MD, DOCX, CSV, XLSX, 코드 파일을 추가할 수 있어.</p>
         </div>
 
         <button id="uploadCloseBtn" class="icon-btn">×</button>
@@ -133,7 +330,7 @@
           id="fileInput"
           type="file"
           multiple
-          accept=".pdf,.txt,.md,.docx"
+          accept=".pdf,.txt,.md,.docx,.csv,.xlsx,.py,.js,.ts,.tsx,.jsx,.html,.css,.json,.yaml,.yml,.java,.cpp,.c,.cs,.go,.rs,.php,.sql,.sh,.ps1,.bat"
           hidden
         />
 

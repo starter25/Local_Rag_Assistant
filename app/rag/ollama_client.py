@@ -1,6 +1,30 @@
 import requests
 
 from app.config import CHAT_MODEL, EMBED_MODEL, OLLAMA_URL, QUERY_REWRITE_MODEL
+from app.rag.model_profiles import (
+    RECOMMENDED_MODELS,
+    get_chat_options,
+    get_system_prompt,
+    normalize_chat_model,
+)
+
+
+# Ollama 서버가 살아 있는지 빠르게 확인합니다.
+def _model_base_name(name: str) -> str:
+    return str(name or "").split(":", 1)[0].lower()
+
+
+def _is_chat_model_name(name: str) -> bool:
+    base_name = _model_base_name(name)
+    embed_base_name = _model_base_name(EMBED_MODEL)
+
+    if not base_name:
+        return False
+
+    if base_name == embed_base_name:
+        return False
+
+    return "embed" not in base_name and "embedding" not in base_name
 
 
 def check_ollama():
@@ -9,18 +33,57 @@ def check_ollama():
         response.raise_for_status()
     except Exception as e:
         raise RuntimeError(
-            "Ollama가 실행 중인지 확인해줘. "
-            "PowerShell에서 `ollama list`가 되는지 먼저 확인하면 돼."
+            "Ollama is not running or is not reachable. "
+            "Run `ollama list` in PowerShell first."
         ) from e
 
 
-def get_embedding(text: str):
-    """
-    Ollama embedding API 호출.
-    최신 /api/embed을 먼저 시도하고,
-    안 되면 구형 /api/embeddings로 fallback.
-    """
+# 설치된 Ollama 모델과 앱이 추천하는 모델 설치 상태를 함께 반환합니다.
+def list_ollama_models():
+    response = requests.get(f"{OLLAMA_URL}/api/tags", timeout=5)
+    response.raise_for_status()
 
+    models = []
+
+    for item in response.json().get("models", []):
+        name = item.get("name") or item.get("model")
+
+        if not name:
+            continue
+
+        if not _is_chat_model_name(name):
+            continue
+
+        models.append(
+            {
+                "name": name,
+                "modified_at": item.get("modified_at", ""),
+                "size": item.get("size", 0),
+            }
+        )
+
+    models.sort(key=lambda item: item["name"].lower())
+    installed_names = {item["name"] for item in models}
+    recommended_models = []
+
+    for model in RECOMMENDED_MODELS:
+        recommended_models.append(
+            {
+                **model,
+                "installed": model["name"] in installed_names,
+            }
+        )
+
+    return {
+        "models": models,
+        "default_model": CHAT_MODEL,
+        "embedding_model": EMBED_MODEL,
+        "recommended_models": recommended_models,
+    }
+
+
+# 단일 텍스트를 embedding 벡터로 변환합니다.
+def get_embedding(text: str):
     try:
         response = requests.post(
             f"{OLLAMA_URL}/api/embed",
@@ -55,6 +118,7 @@ def get_embedding(text: str):
     return data["embedding"]
 
 
+# 여러 chunk embedding을 한 번에 시도하고, 실패하면 단건 호출로 fallback합니다.
 def get_embeddings(texts):
     texts = [text for text in texts if text]
 
@@ -84,31 +148,53 @@ def get_embeddings(texts):
     return [get_embedding(text) for text in texts]
 
 
-def generate_with_ollama(prompt: str):
+# Ollama chat API로 최종 답변을 생성합니다.
+def generate_with_ollama(
+    prompt: str,
+    model: str | None = None,
+    system_prompt: str | None = None,
+    options: dict | None = None,
+    chat_history: list[dict] | None = None,
+):
+    selected_model = normalize_chat_model(model)
+    system_prompt = system_prompt or get_system_prompt(selected_model)
+    chat_options = get_chat_options(selected_model) if options is None else options
+    messages = [
+        {
+            "role": "system",
+            "content": system_prompt,
+        }
+    ]
+
+    for item in chat_history or []:
+        role = item.get("role")
+        content = str(item.get("content") or "").strip()
+
+        if role not in {"user", "assistant"} or not content:
+            continue
+
+        messages.append(
+            {
+                "role": role,
+                "content": content[:4000],
+            }
+        )
+
+    messages.append(
+        {
+            "role": "user",
+            "content": prompt,
+        }
+    )
+
     response = requests.post(
         f"{OLLAMA_URL}/api/chat",
         json={
-            "model": CHAT_MODEL,
-            "messages": [
-                {
-                    "role": "system",
-                    "content": (
-                        "너는 사용자가 제공한 참고 자료를 바탕으로 답변하는 한국어 AI 어시스턴트다. "
-                        "답변은 짧고 명확하게 작성한다."
-                    ),
-                },
-                {
-                    "role": "user",
-                    "content": prompt,
-                },
-            ],
+            "model": selected_model,
+            "messages": messages,
             "stream": False,
             "keep_alive": "10m",
-            "options": {
-                "temperature": 0.0,
-                "num_ctx": 2048,
-                "num_predict": 300,
-            },
+            "options": chat_options,
         },
         timeout=180,
     )
@@ -119,40 +205,41 @@ def generate_with_ollama(prompt: str):
     return data.get("message", {}).get("content", "")
 
 
-def rewrite_query_with_ollama(question: str):
+# RAG 검색 품질을 높이기 위해 사용자 질문을 검색어 후보 JSON으로 재작성합니다.
+def rewrite_query_with_ollama(question: str, model: str | None = None):
+    selected_model = normalize_chat_model(model) if model else QUERY_REWRITE_MODEL
+
     response = requests.post(
         f"{OLLAMA_URL}/api/chat",
         json={
-            "model": QUERY_REWRITE_MODEL,
+            "model": selected_model,
             "messages": [
                 {
                     "role": "system",
                     "content": (
-                        "너는 RAG 검색어 재작성기다. "
-                        "사용자 질문을 문서 검색에 유리한 한국어 검색 질문들로 바꿔라. "
-                        "답변하지 말고 JSON만 출력해라."
+                        "You rewrite Korean RAG search queries. Return JSON only. "
+                        "Do not answer the user question."
                     ),
                 },
                 {
                     "role": "user",
                     "content": f"""
-사용자 질문:
+User question:
 {question}
 
-작업:
-사용자 질문을 문서 검색에 적합한 한국어 검색 질문 2~4개로 바꿔라.
+Task:
+Rewrite the user question into 2 to 4 Korean search queries suitable for document retrieval.
 
-규칙:
-- 원래 질문의 의도를 유지해라.
-- 질문을 답변하지 마라.
-- 새로운 사실을 추가하지 마라.
-- 추천, 제안, 판단 요청이 아닌 질문을 추천 질문으로 바꾸지 마라.
-- 대명사나 지시어는 문서 검색에 더 명확한 표현으로 바꿔라.
-- 너무 짧거나 모호한 질문은 검색 가능한 구체적인 질문으로 바꿔라.
-- 반드시 JSON만 출력해라.
+Rules:
+- Preserve the user's original intent.
+- Do not answer the question.
+- Do not add unsupported facts.
+- Do not turn the question into a recommendation request.
+- Prefer concrete search phrases that are likely to appear in documents.
+- Return JSON only.
 
-출력 형식:
-{{"queries":["검색 질문 1","검색 질문 2","검색 질문 3"]}}
+Output format:
+{{"queries":["search query 1","search query 2","search query 3"]}}
 """.strip(),
                 },
             ],

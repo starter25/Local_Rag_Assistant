@@ -1,4 +1,12 @@
+from app.rag.document_index import (
+    load_document_index,
+    mark_document_empty,
+    mark_document_failed,
+    mark_document_indexed,
+    remove_document_record,
+)
 from app.rag.ingest_service import file_sha256, get_document_files, ingest_file
+from app.rag.index_profile import get_reindex_reasons
 from app.rag.ollama_client import check_ollama
 from app.rag.vector_db import (
     delete_document_from_db,
@@ -46,6 +54,7 @@ def sync_documents():
 
     files = {p.name: p for p in get_document_files()}
     db_sources = get_db_sources(collection)
+    document_index = load_document_index()
 
     deleted = 0
     added = 0
@@ -56,22 +65,45 @@ def sync_documents():
     for source in list(db_sources.keys()):
         if source not in files:
             deleted_chunks = delete_document_from_db(collection, source)
+            remove_document_record(source)
             deleted += 1
             print(f"DB에서 삭제됨: {source} / 삭제 chunk 수: {deleted_chunks}")
 
     for source, file_path in files.items():
         current_hash = file_sha256(file_path)
         db_info = db_sources.get(source)
+        reindex_reasons = get_reindex_reasons(
+            document_index.get(source, {}).get("index_profile")
+        )
 
-        if db_info and db_info.get("file_hash") == current_hash:
+        if db_info and db_info.get("file_hash") == current_hash and not reindex_reasons:
+            mark_document_indexed(
+                file_path,
+                {
+                    "chunks": db_info.get("chunks", 0),
+                    "file_hash": current_hash,
+                    "index_profile": document_index.get(source, {}).get("index_profile", {}),
+                },
+            )
             skipped += 1
             print(f"변경 없음, 건너뜀: {source}")
             continue
 
         print(f"동기화 중: {source}")
 
-        chunk_count = ingest_file(collection, file_path, replace=True)
+        try:
+            ingest_result = ingest_file(collection, file_path, replace=True)
+        except Exception as exc:
+            mark_document_failed(file_path, str(exc))
+            raise
+
+        chunk_count = ingest_result["chunks"]
         total_new_chunks += chunk_count
+
+        if chunk_count == 0:
+            mark_document_empty(file_path, ingest_result)
+        else:
+            mark_document_indexed(file_path, ingest_result)
 
         if db_info:
             updated += 1

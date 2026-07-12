@@ -3,6 +3,7 @@ import re
 from app.config import CHUNK_OVERLAP, CHUNK_SIZE
 
 
+# 긴 문서를 겹침이 있는 chunk로 나누어 검색 누락을 줄입니다.
 def split_text(text: str, chunk_size=CHUNK_SIZE, overlap=CHUNK_OVERLAP):
     if chunk_size <= 0:
         raise ValueError("chunk_size는 1 이상이어야 합니다.")

@@ -1,6 +1,7 @@
 import re
 
 
+# DeepSeek 계열처럼 reasoning 흔적을 내보내는 모델의 답변을 최종 답변만 남기도록 정리합니다.
 def clean_answer(text: str):
     text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
     text = text.replace("Thinking...", "").replace("...done thinking.", "").strip()
